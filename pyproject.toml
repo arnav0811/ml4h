@@ -1,0 +1,14 @@
+[project]
+name = "semantic-drift"
+version = "0.1.0"
+description = "Detecting semantic drift and new word emergence in historical newspaper corpora"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scipy>=1.10.0",
+    "matplotlib>=3.7.0",
+    "scikit-learn>=1.2.0",
+]
