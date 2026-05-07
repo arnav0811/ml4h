@@ -145,6 +145,26 @@ def plot_embedding_trajectories(words, period_embeddings):
 
 
 def plot_evaluation_comparison(ev):
+    if ev.get("skipped"):
+        fig, ax = plt.subplots(figsize=(10, 4))
+        reason = ev.get("reason", "Benchmark metrics are not available for this corpus.")
+        source = ev.get("data_source", "real corpus")
+        detected = ev.get("neologism", {}).get("n_detected", 0)
+        ax.axis("off")
+        ax.text(
+            0.5, 0.58,
+            f"Evaluation skipped for {source}",
+            ha="center", va="center", fontsize=15, fontweight="bold",
+            transform=ax.transAxes,
+        )
+        ax.text(
+            0.5, 0.42,
+            f"{reason}\nDetected candidates: {detected}",
+            ha="center", va="center", fontsize=11, color="#444",
+            transform=ax.transAxes,
+        )
+        return _save(fig, "evaluation_comparison")
+
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
     # --- Neologism panel (3 methods) ---
