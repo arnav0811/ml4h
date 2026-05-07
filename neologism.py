@@ -1,8 +1,7 @@
 """
-Neologism analysis: given candidates from word_selection, filter noise
-(OCR errors, repeated-char artifacts), compute adoption curves, and
-rank by confidence. This is purely frequency-based — BERT is not needed
-here since the signal is "this word didn't exist, now it does."
+Neologism analysis: filter OCR errors, compute adoption curves, rank by confidence.
+
+Frequency-based — no BERT needed. Signal is "this word didn't exist, now it does."
 """
 
 import re
@@ -12,7 +11,7 @@ from typing import Dict, Set
 import numpy as np
 import pandas as pd
 
-from config import PERIODS, NEO_ABSENT_THRESHOLD, NEO_PRESENT_THRESHOLD
+from config import PERIODS, NEO_ABSENT_THRESHOLD
 from data_pipeline import freq_per_million
 
 
@@ -30,13 +29,13 @@ def edit_distance(s1: str, s2: str) -> int:
     return prev[-1]
 
 
-def build_known_vocab(vc: Dict[str, Counter]) -> Set[str]:
-    """Words appearing in 3+ periods — unlikely to be OCR errors."""
+def build_known_vocab(vc: Dict[str, Counter], min_periods: int = 3) -> Set[str]:
+    """Words appearing in min_periods+ periods — unlikely to be OCR errors."""
     counts = Counter()
     for c in vc.values():
         for w in c:
             counts[w] += 1
-    return {w for w, c in counts.items() if c >= 3}
+    return {w for w, c in counts.items() if c >= min_periods}
 
 
 def filter_ocr_errors(candidates: pd.DataFrame, known: Set[str]) -> pd.DataFrame:
@@ -48,19 +47,16 @@ def filter_ocr_errors(candidates: pd.DataFrame, known: Set[str]) -> pd.DataFrame
         w = row["word"]
         is_ocr = False
 
-        # repeated chars (e.g. "aaand")
-        if re.search(r"(.)\1{2,}", w):
+        if re.search(r"(.)\1{2,}", w):                    # repeated chars (aaand)
             is_ocr = True
 
-        # common OCR bigram errors in short words
-        if not is_ocr and len(w) <= 5:
+        if not is_ocr and len(w) <= 5:                    # common OCR bigrams in short words
             for pat in ["rn", "vv", "ii", "ij"]:
                 if pat in w:
                     is_ocr = True
                     break
 
-        # edit distance 1 from a known word
-        if not is_ocr:
+        if not is_ocr:                                    # edit-distance-1 from known word
             for kw in known:
                 if kw[0] == w[0] and abs(len(kw) - len(w)) <= 1 and kw != w:
                     if edit_distance(w, kw) <= 1:
@@ -107,7 +103,7 @@ def analyze_neologisms(candidates: pd.DataFrame, vc: Dict[str, Counter]) -> pd.D
 
     result_df = pd.DataFrame(results)
     if not result_df.empty:
-        # confidence = log-frequency * persistence, penalized if not sustained
+        # confidence = log(post-emergence freq) * persistence, halved if not sustained
         result_df["confidence_score"] = (
             np.log1p(result_df["freq_after"])
             * result_df["persistence"]
@@ -118,7 +114,7 @@ def analyze_neologisms(candidates: pd.DataFrame, vc: Dict[str, Counter]) -> pd.D
     print(f"  Final neologisms: {len(result_df)}")
     if not result_df.empty:
         print("\n  Top by confidence:")
-        for _, r in result_df.head(10).iterrows():
+        for _, r in result_df.head(15).iterrows():
             s = "Y" if r["is_sustained"] else "N"
             g = f"{r['growth_rate']:.2f}" if r["growth_rate"] else "N/A"
             print(f"    {r['word']:20s} emerged: {r['emergence_period']}  "

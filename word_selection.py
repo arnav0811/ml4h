@@ -1,16 +1,16 @@
 """
-Unified word selection: produces three populations from one vocabulary analysis.
+Unified word selection.
 
-This module addresses the relationship between neologism detection (Sec 5.3)
-and semantic drift (Sec 5.4). Rather than treating them as independent tasks,
-we run a single upstream analysis that partitions words by temporal profile:
+Partitions the vocabulary into three populations from one upstream analysis,
+addressing the relationship between neologism detection (Sec 5.3) and semantic
+drift (Sec 5.4):
 
-  Population 1 — NEOLOGISMS:  absent in period t-1, present in t
-  Population 2 — DRIFT:       present across 3+ periods (stable enough for BERT)
-  Population 3 — LIFECYCLE:   neologisms that persist → get BOTH analyses
+  Population 1 — NEOLOGISMS:  absent in period t-1, present in t, persists
+  Population 2 — DRIFT:       stable presence across 3+ periods (BERT-ready)
+  Population 3 — LIFECYCLE:   neologisms that persist → bridge between 5.3 and 5.4
 
-The lifecycle population is the bridge: words that emerged during our time
-range and then stuck around long enough to undergo measurable meaning change.
+Stopwords are filtered from BOTH populations: function words ("the", "of", "to")
+contribute syntactic context noise but no genuine semantic drift signal.
 """
 
 import pandas as pd
@@ -20,18 +20,22 @@ from typing import Dict, Tuple
 from config import (
     PERIODS, NEO_ABSENT_THRESHOLD, NEO_PRESENT_THRESHOLD,
     NEO_MIN_PERSISTENCE, DRIFT_MIN_PERIODS, DRIFT_MIN_FREQ_PER_PERIOD,
-    LIFECYCLE_MIN_POST_EMERGENCE,
+    LIFECYCLE_MIN_POST_EMERGENCE, STOPWORDS,
 )
 from data_pipeline import freq_per_million
 
 
 def select_neologism_candidates(vc: Dict[str, Counter]) -> pd.DataFrame:
+    """Words crossing from absent to present between consecutive periods."""
     all_words = set()
     for c in vc.values():
         all_words.update(c.keys())
 
     rows = []
     for word in all_words:
+        if word in STOPWORDS:
+            continue
+
         freqs = [freq_per_million(word, p, vc) for p in PERIODS]
         for i in range(len(PERIODS) - 1):
             if freqs[i] < NEO_ABSENT_THRESHOLD and freqs[i + 1] > NEO_PRESENT_THRESHOLD:
@@ -58,12 +62,16 @@ def select_neologism_candidates(vc: Dict[str, Counter]) -> pd.DataFrame:
 
 
 def select_drift_candidates(vc: Dict[str, Counter]) -> pd.DataFrame:
+    """Content words present in 3+ periods with sufficient occurrences for stable embeddings."""
     all_words = set()
     for c in vc.values():
         all_words.update(c.keys())
 
     rows = []
     for word in all_words:
+        if word in STOPWORDS:
+            continue
+
         raw = {p: vc[p].get(word, 0) for p in PERIODS}
         n_present = sum(1 for f in raw.values() if f >= DRIFT_MIN_FREQ_PER_PERIOD)
         if n_present >= DRIFT_MIN_PERIODS:
@@ -82,7 +90,7 @@ def select_drift_candidates(vc: Dict[str, Counter]) -> pd.DataFrame:
 
 
 def select_lifecycle_words(neo_df: pd.DataFrame, drift_df: pd.DataFrame) -> pd.DataFrame:
-    """Neologisms that also qualify as drift candidates — the bridge between 5.3 and 5.4."""
+    """Neologisms that also qualify as drift candidates — the explicit bridge between 5.3 and 5.4."""
     if neo_df.empty or drift_df.empty:
         return pd.DataFrame()
 
@@ -103,7 +111,7 @@ def select_lifecycle_words(neo_df: pd.DataFrame, drift_df: pd.DataFrame) -> pd.D
 
 def run_word_selection(vc: Dict[str, Counter]) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     print("=" * 60)
-    print("WORD SELECTION")
+    print("WORD SELECTION (stopwords filtered)")
     print("=" * 60)
 
     neo_df = select_neologism_candidates(vc)
@@ -116,7 +124,7 @@ def run_word_selection(vc: Dict[str, Counter]) -> Tuple[pd.DataFrame, pd.DataFra
 
     if not neo_df.empty:
         print("\n  Top neologisms:")
-        for _, r in neo_df.head(8).iterrows():
+        for _, r in neo_df.head(10).iterrows():
             print(f"    {r['word']:20s} emerged: {r['emergence_period']}  "
                   f"freq: {r['freq_before']:.0f} -> {r['freq_after']:.0f}/M")
 
@@ -124,6 +132,6 @@ def run_word_selection(vc: Dict[str, Counter]) -> Tuple[pd.DataFrame, pd.DataFra
         print("\n  Lifecycle words (bridge between neologism + drift):")
         for _, r in lifecycle_df.iterrows():
             print(f"    {r['word']:20s} emerged: {r['emergence_period']}  "
-                  f"then persists for {r['post_emergence_periods']} periods")
+                  f"persists for {r['post_emergence_periods']} periods")
 
     return neo_df, drift_df, lifecycle_df
