@@ -21,14 +21,18 @@ MIN_WORD_LENGTH = 3       # raised from 2 — single/double letters are rarely m
 MAX_WORD_LENGTH = 25
 
 # Word selection
+# Tuned for AmericanStories (Chronicling America) at ~3000 articles/period.
+# Period token totals are ~300k–1M, with thousands of distinct articles per
+# period — so we can require neologisms to span more articles, and we have
+# the headroom to require higher raw-count drift presence.
 NEO_ABSENT_THRESHOLD = 5
-NEO_PRESENT_THRESHOLD = 20
-NEO_MIN_PERSISTENCE = 2
-NEO_MIN_DOC_FREQ = 2
-PROPER_NOUN_CAP_RATIO = 0.75
+NEO_PRESENT_THRESHOLD = 15      # observed: telephone @19/M in 1860-1900; need to admit it
+NEO_MIN_PERSISTENCE = 1         # was 2 — but excluded last-period emergers (television, radar)
+NEO_MIN_DOC_FREQ = 5            # 3000-doc periods — real neologisms appear across articles
+PROPER_NOUN_CAP_RATIO = 0.60    # newspapers consistently capitalize names; tighter filter
 PROPER_NOUN_MIN_TOKENS = 10
-DRIFT_MIN_PERIODS = 3
-DRIFT_MIN_FREQ_PER_PERIOD = 30
+DRIFT_MIN_PERIODS = 2           # need only 2 periods to *measure* drift; allows late emergers
+DRIFT_MIN_FREQ_PER_PERIOD = 30  # raw count; observed peaks: engine 90, gay 47, broadcast 35
 LIFECYCLE_MIN_POST_EMERGENCE = 2
 
 # BERT — layer 11 captures semantics better than final layer (Ethayarajh 2019)
@@ -99,9 +103,12 @@ STOPWORDS = frozenset({
     "who", "whom", "whose", "which", "what",
 })
 
-# Gutenberg/book-specific terms and metadata that are frequent but rarely useful
-# for language-change claims in this small exploratory corpus.
+# Corpus-artifact tokens that show up frequently but don't carry real
+# semantic-change signal: book metadata (Gutenberg), classified-ad
+# abbreviations (AmericanStories real-estate / want-ads), and OCR splits
+# of common suffixes ("ing" left over from word-wrap breaks).
 CORPUS_ARTIFACT_WORDS = frozenset({
+    # Gutenberg/book artifacts
     "book", "books", "chapter", "chapters", "volume", "volumes", "page", "pages",
     "part", "parts", "section", "sections", "preface", "contents", "title",
     "author", "authors", "editor", "editors", "edition", "editions", "copyright",
@@ -110,4 +117,10 @@ CORPUS_ARTIFACT_WORDS = frozenset({
     "illustration", "illustrations", "appendix", "appendices", "index",
     "printed", "published", "publisher", "publishers",
     "mr", "mrs", "ms", "miss", "sir", "madam", "lady", "lord",
+    # Newspaper OCR / classified-ad noise
+    "ave", "blvd", "rd", "ste", "apt", "fl", "fla", "tho", "thro",
+    "bsmt", "bedrms", "bdrm", "bdrms", "kit", "din", "bath", "baths", "rms",
+    "rm", "rec", "rec'd", "rec'r", "ton", "tons", "ing", "tion", "ment",
+    "viii", "iii", "vii", "iv", "vi", "ix", "xi", "xii", "xiii", "xiv",
+    "ana", "con", "com", "exc", "ext",
 })

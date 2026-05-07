@@ -31,6 +31,7 @@ def main(skip_bert=False, skip_neighbors=False, data_source="synthetic", max_dri
     # ---- Stage 1: Data ----
     from data_pipeline import (
         download_chronicling_america, download_gutenberg,
+        download_americanstories,
         generate_synthetic_data, preprocess_corpus, build_vocab_counts,
     )
 
@@ -39,6 +40,8 @@ def main(skip_bert=False, skip_neighbors=False, data_source="synthetic", max_dri
         download_chronicling_america(pages_per_period=1000)
     elif data_source == "gutenberg":
         download_gutenberg()
+    elif data_source == "americanstories":
+        download_americanstories()
     else:
         generate_synthetic_data()
 
@@ -147,10 +150,11 @@ if __name__ == "__main__":
     parser.add_argument("--skip-bert", action="store_true")
     parser.add_argument("--skip-neighbors", action="store_true",
                         help="Skip nearest-neighbor computation (saves significant compute)")
-    parser.add_argument("--data", choices=["synthetic", "gutenberg", "chronam"],
+    parser.add_argument("--data", choices=["synthetic", "gutenberg", "chronam", "americanstories"],
                         default="synthetic",
                         help="Data source: synthetic (validation), gutenberg (real books), "
-                             "chronam (Library of Congress newspapers via loc.gov API)")
+                             "chronam (Library of Congress newspapers via loc.gov API), "
+                             "americanstories (Chronicling America articles via HuggingFace)")
     parser.add_argument("--max-drift-words", type=int, default=80)
     args = parser.parse_args()
     main(skip_bert=args.skip_bert,

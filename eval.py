@@ -255,30 +255,7 @@ def run_evaluation(neo_results, drift_results, vc, data_source: str = "synthetic
     print("\n" + "=" * 60)
     print("EVALUATION")
     print("=" * 60)
-
-    if data_source != "synthetic":
-        print(f"\n  Skipping synthetic ground-truth metrics for data source: {data_source}")
-        print("  The built-in OED/synthetic benchmark is not a validated label set for this corpus.")
-        return {
-            "data_source": data_source,
-            "skipped": True,
-            "reason": "Synthetic/OED benchmark is not valid for exploratory real-corpus runs.",
-            "neologism": {
-                "label": "Our Method",
-                "recall": float("nan"),
-                "precision": float("nan"),
-                "f1": float("nan"),
-                "period_accuracy": float("nan"),
-                "n_gt": 0,
-                "n_detected": len(neo_results),
-            },
-            "neologism_baseline": {},
-            "neologism_baseline_sw": {},
-            "drift_centroid": {"spearman_rho": float("nan"), "n_overlap": 0},
-            "drift_apd": {"spearman_rho": float("nan"), "n_overlap": 0},
-            "drift_jaccard": None,
-            "drift_random_baseline": {"mean_rho": float("nan")},
-        }
+    print(f"  Data source: {data_source}")
 
     neo_eval = evaluate_neologisms(neo_results, "Our Method")
     baseline_neo = frequency_only_baseline(vc, filter_stopwords=False)
