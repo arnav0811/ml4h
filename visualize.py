@@ -83,15 +83,27 @@ def plot_drift_with_ci(drift_df, top_n=15):
     """Forest plot showing drift scores with bootstrap 95% CIs."""
     if drift_df.empty or "ci_lower" not in drift_df.columns:
         return
-    df = drift_df.head(top_n).iloc[::-1]  # reverse for top-at-top display
+    required = ["word", "overall_centroid_distance", "ci_lower", "ci_upper"]
+    df = drift_df.head(top_n).copy()
+    for col in required[1:]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=required).iloc[::-1]  # reverse for top-at-top display
+    if df.empty:
+        return
 
     fig, ax = plt.subplots(figsize=(10, max(5, len(df) * 0.35)))
     y = np.arange(len(df))
     cd = df["overall_centroid_distance"].values
-    lo = df["ci_lower"].values
-    hi = df["ci_upper"].values
+    ci_a = df["ci_lower"].values
+    ci_b = df["ci_upper"].values
+    lo = np.minimum(ci_a, ci_b)
+    hi = np.maximum(ci_a, ci_b)
+    xerr = np.vstack([
+        np.maximum(cd - lo, 0),
+        np.maximum(hi - cd, 0),
+    ])
 
-    ax.errorbar(cd, y, xerr=[cd - lo, hi - cd], fmt="o", capsize=4,
+    ax.errorbar(cd, y, xerr=xerr, fmt="o", capsize=4,
                 color="#FF9800", ecolor="#9E9E9E", markersize=8)
     ax.set_yticks(y)
     ax.set_yticklabels(df["word"].values)
