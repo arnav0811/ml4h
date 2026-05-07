@@ -59,7 +59,7 @@ def main(skip_bert=False, skip_neighbors=False, data_source="synthetic", max_dri
         lifecycle_df.to_csv(OUTPUT_DIR / "lifecycle_words.csv", index=False)
 
     # ---- Stage 3: Neologism Analysis ----
-    from neologisms import analyze_neologisms
+    from neologism import analyze_neologisms
 
     neo_results = analyze_neologisms(neo_df, vc)
     neo_results.to_csv(OUTPUT_DIR / "neologism_results.csv", index=False)

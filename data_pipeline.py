@@ -719,16 +719,16 @@ def preprocess_corpus() -> Dict[str, List[str]]:
         for txt_file in sorted(raw_dir.glob("*.txt")):
             raw = txt_file.read_text(encoding="utf-8", errors="replace")
 
-            # heuristic: if file has many lines and short avg line, it's pre-chunked
-            lines = raw.strip().split("\n")
-            if len(lines) > 50 and sum(len(l.split()) for l in lines) / max(len(lines), 1) < 100:
-                # synthetic format: one chunk per line
+            if txt_file.name == "synthetic.txt":
+                # Synthetic data is already stored as one training chunk per line.
+                lines = raw.strip().split("\n")
                 for line in lines:
                     cleaned = clean_text(line)
                     if len(cleaned.split()) >= MIN_CHUNK_LENGTH:
                         all_chunks.append(cleaned)
             else:
-                # full document: clean and chunk
+                # Real corpora are full documents. Gutenberg line wrapping often
+                # creates short physical lines, so chunk after joining the file.
                 cleaned = clean_text(raw)
                 all_chunks.extend(chunk_long_text(cleaned))
 
