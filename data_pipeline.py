@@ -710,14 +710,34 @@ def preprocess_corpus() -> Dict[str, List[str]]:
     (real Chronicling America) formats automatically.
     """
     corpus = {}
+    doc_freqs = {}
+    doc_totals = {}
+    cap_counts = {}
+    token_counts = {}
     for period in PERIODS:
         raw_dir = RAW_DIR / period
         if not raw_dir.exists():
             continue
 
         all_chunks = []
+        period_doc_freq = Counter()
+        period_cap_counts = Counter()
+        period_token_counts = Counter()
+        n_docs = 0
         for txt_file in sorted(raw_dir.glob("*.txt")):
             raw = txt_file.read_text(encoding="utf-8", errors="replace")
+            n_docs += 1
+
+            raw_words = re.findall(r"[A-Za-z]+", raw)
+            doc_words = set()
+            for raw_word in raw_words:
+                word = raw_word.lower()
+                if MIN_WORD_LENGTH <= len(word) <= MAX_WORD_LENGTH:
+                    doc_words.add(word)
+                    period_token_counts[word] += 1
+                    if raw_word[:1].isupper() and not raw_word.isupper():
+                        period_cap_counts[word] += 1
+            period_doc_freq.update(doc_words)
 
             if txt_file.name == "synthetic.txt":
                 # Synthetic data is already stored as one training chunk per line.
@@ -735,8 +755,21 @@ def preprocess_corpus() -> Dict[str, List[str]]:
         out_path = PROCESSED_DIR / f"{period}.txt"
         out_path.write_text("\n".join(all_chunks), encoding="utf-8")
         corpus[period] = all_chunks
+        doc_freqs[period] = period_doc_freq
+        doc_totals[period] = n_docs
+        cap_counts[period] = period_cap_counts
+        token_counts[period] = period_token_counts
         n_words = sum(len(c.split()) for c in all_chunks)
         print(f"  {period}: {len(all_chunks)} chunks, ~{n_words:,} words")
+
+    metadata = {
+        "doc_freqs": doc_freqs,
+        "doc_totals": doc_totals,
+        "capitalized_counts": cap_counts,
+        "token_counts": token_counts,
+    }
+    with open(PROCESSED_DIR / "word_metadata.pkl", "wb") as f:
+        pickle.dump(metadata, f)
 
     return corpus
 
@@ -773,6 +806,14 @@ def build_vocab_counts(corpus: Dict[str, List[str]]) -> Dict[str, Counter]:
 
 def load_vocab_counts() -> Dict[str, Counter]:
     with open(PROCESSED_DIR / "vocab_counts.pkl", "rb") as f:
+        return pickle.load(f)
+
+
+def load_word_metadata() -> Dict:
+    path = PROCESSED_DIR / "word_metadata.pkl"
+    if not path.exists():
+        return {}
+    with open(path, "rb") as f:
         return pickle.load(f)
 
 

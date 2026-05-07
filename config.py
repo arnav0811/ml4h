@@ -24,6 +24,9 @@ MAX_WORD_LENGTH = 25
 NEO_ABSENT_THRESHOLD = 5
 NEO_PRESENT_THRESHOLD = 20
 NEO_MIN_PERSISTENCE = 2
+NEO_MIN_DOC_FREQ = 2
+PROPER_NOUN_CAP_RATIO = 0.75
+PROPER_NOUN_MIN_TOKENS = 10
 DRIFT_MIN_PERIODS = 3
 DRIFT_MIN_FREQ_PER_PERIOD = 30
 LIFECYCLE_MIN_POST_EMERGENCE = 2
@@ -94,4 +97,17 @@ STOPWORDS = frozenset({
     "they", "them", "their", "theirs", "themselves",
     "this", "that", "these", "those",
     "who", "whom", "whose", "which", "what",
+})
+
+# Gutenberg/book-specific terms and metadata that are frequent but rarely useful
+# for language-change claims in this small exploratory corpus.
+CORPUS_ARTIFACT_WORDS = frozenset({
+    "book", "books", "chapter", "chapters", "volume", "volumes", "page", "pages",
+    "part", "parts", "section", "sections", "preface", "contents", "title",
+    "author", "authors", "editor", "editors", "edition", "editions", "copyright",
+    "gutenberg", "project", "ebook", "ebooks", "online", "archive", "license",
+    "transcriber", "transcribers", "note", "notes", "footnote", "footnotes",
+    "illustration", "illustrations", "appendix", "appendices", "index",
+    "printed", "published", "publisher", "publishers",
+    "mr", "mrs", "ms", "miss", "sir", "madam", "lady", "lord",
 })

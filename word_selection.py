@@ -19,29 +19,62 @@ from typing import Dict, Tuple
 
 from config import (
     PERIODS, NEO_ABSENT_THRESHOLD, NEO_PRESENT_THRESHOLD,
-    NEO_MIN_PERSISTENCE, DRIFT_MIN_PERIODS, DRIFT_MIN_FREQ_PER_PERIOD,
-    LIFECYCLE_MIN_POST_EMERGENCE, STOPWORDS,
+    NEO_MIN_PERSISTENCE, NEO_MIN_DOC_FREQ, PROPER_NOUN_CAP_RATIO,
+    PROPER_NOUN_MIN_TOKENS, DRIFT_MIN_PERIODS, DRIFT_MIN_FREQ_PER_PERIOD,
+    LIFECYCLE_MIN_POST_EMERGENCE, STOPWORDS, CORPUS_ARTIFACT_WORDS,
 )
-from data_pipeline import freq_per_million
+from data_pipeline import freq_per_million, load_word_metadata
 
 
-def select_neologism_candidates(vc: Dict[str, Counter]) -> pd.DataFrame:
+def _is_real_corpus_metadata(metadata: Dict) -> bool:
+    doc_totals = metadata.get("doc_totals", {})
+    return any(n > 1 for n in doc_totals.values())
+
+
+def _capitalized_ratio(word: str, metadata: Dict) -> float:
+    caps = sum(c.get(word, 0) for c in metadata.get("capitalized_counts", {}).values())
+    toks = sum(c.get(word, 0) for c in metadata.get("token_counts", {}).values())
+    return caps / toks if toks else 0.0
+
+
+def _is_low_value_word(word: str, metadata: Dict) -> bool:
+    if word in STOPWORDS or word in CORPUS_ARTIFACT_WORDS:
+        return True
+
+    toks = sum(c.get(word, 0) for c in metadata.get("token_counts", {}).values())
+    if toks >= PROPER_NOUN_MIN_TOKENS and _capitalized_ratio(word, metadata) >= PROPER_NOUN_CAP_RATIO:
+        return True
+
+    return False
+
+
+def _doc_freq(word: str, period: str, metadata: Dict) -> int:
+    return metadata.get("doc_freqs", {}).get(period, Counter()).get(word, 0)
+
+
+def select_neologism_candidates(vc: Dict[str, Counter], metadata: Dict = None) -> pd.DataFrame:
     """Words crossing from absent to present between consecutive periods."""
+    metadata = metadata or {}
+    use_doc_filter = _is_real_corpus_metadata(metadata)
     all_words = set()
     for c in vc.values():
         all_words.update(c.keys())
 
     rows = []
     for word in all_words:
-        if word in STOPWORDS:
+        if _is_low_value_word(word, metadata):
             continue
 
         freqs = [freq_per_million(word, p, vc) for p in PERIODS]
         for i in range(len(PERIODS) - 1):
             if freqs[i] < NEO_ABSENT_THRESHOLD and freqs[i + 1] > NEO_PRESENT_THRESHOLD:
+                if use_doc_filter and _doc_freq(word, PERIODS[i + 1], metadata) < NEO_MIN_DOC_FREQ:
+                    continue
+
                 persistence = sum(
                     1 for j in range(i + 1, len(PERIODS))
                     if freqs[j] > NEO_ABSENT_THRESHOLD
+                    and (not use_doc_filter or _doc_freq(word, PERIODS[j], metadata) >= NEO_MIN_DOC_FREQ)
                 )
                 if persistence >= NEO_MIN_PERSISTENCE:
                     rows.append({
@@ -61,15 +94,16 @@ def select_neologism_candidates(vc: Dict[str, Counter]) -> pd.DataFrame:
     return df
 
 
-def select_drift_candidates(vc: Dict[str, Counter]) -> pd.DataFrame:
+def select_drift_candidates(vc: Dict[str, Counter], metadata: Dict = None) -> pd.DataFrame:
     """Content words present in 3+ periods with sufficient occurrences for stable embeddings."""
+    metadata = metadata or {}
     all_words = set()
     for c in vc.values():
         all_words.update(c.keys())
 
     rows = []
     for word in all_words:
-        if word in STOPWORDS:
+        if _is_low_value_word(word, metadata):
             continue
 
         raw = {p: vc[p].get(word, 0) for p in PERIODS}
@@ -114,8 +148,13 @@ def run_word_selection(vc: Dict[str, Counter]) -> Tuple[pd.DataFrame, pd.DataFra
     print("WORD SELECTION (stopwords filtered)")
     print("=" * 60)
 
-    neo_df = select_neologism_candidates(vc)
-    drift_df = select_drift_candidates(vc)
+    metadata = load_word_metadata()
+    if _is_real_corpus_metadata(metadata):
+        print(f"  Real-corpus filters: doc_freq >= {NEO_MIN_DOC_FREQ}, "
+              f"proper-noun cap ratio < {PROPER_NOUN_CAP_RATIO:.2f}")
+
+    neo_df = select_neologism_candidates(vc, metadata)
+    drift_df = select_drift_candidates(vc, metadata)
     lifecycle_df = select_lifecycle_words(neo_df, drift_df)
 
     print(f"  Neologism candidates: {len(neo_df)}")

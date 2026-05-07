@@ -90,7 +90,7 @@ def main(skip_bert=False, skip_neighbors=False, data_source="synthetic", max_dri
     # ---- Stage 5: Evaluation ----
     from eval import run_evaluation
 
-    ev = run_evaluation(neo_results, drift_results, vc)
+    ev = run_evaluation(neo_results, drift_results, vc, data_source=data_source)
 
     ev_save = {}
     for k, v in ev.items():

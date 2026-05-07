@@ -90,8 +90,17 @@ def generate_final_report(
 
     # ========== Evaluation ==========
     md.append("## 5. Evaluation\n")
+    if eval_results.get("skipped"):
+        md.append(
+            f"*Automatic benchmark metrics were skipped for `{eval_results.get('data_source')}`. "
+            "The built-in ground truth is intended for synthetic validation and should not be "
+            "interpreted as a Gutenberg/real-corpus score.*\n"
+        )
     md.append("### 5.1 Neologism Detection\n")
-    if "neologism" in eval_results:
+    if eval_results.get("skipped"):
+        md.append(f"- Detected candidates: **{len(neo_results)}**")
+        md.append("- Precision/recall are not reported for this data source.\n")
+    elif "neologism" in eval_results:
         ne = eval_results["neologism"]
         nb = eval_results.get("neologism_baseline", {})
         nb_sw = eval_results.get("neologism_baseline_sw", {})
