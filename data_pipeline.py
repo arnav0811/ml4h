@@ -14,6 +14,7 @@ Pre-processing strips OCR artifacts, normalizes whitespace, drops short chunks,
 and tokenizes for vocabulary counting.
 """
 
+import os
 import re
 import json
 import time
@@ -170,6 +171,146 @@ def download_chronicling_america(
             sp += 1
 
         print(f"  {period}: completed with {downloaded} pages")
+
+
+# ---------------------------------------------------------------------------
+# Real data: AmericanStories (Chronicling America newspaper articles via
+# HuggingFace `datasets`). This is the same OCR'd LoC newspaper content as
+# the loc.gov API but pre-structured at the article level — drastically more
+# reliable than scraping the live API on a tight deadline.
+# ---------------------------------------------------------------------------
+
+# Per-period year sampling. AmericanStories coverage is concentrated pre-1925
+# (newspapers in the public domain). For 1940-1980 we use what is available
+# and document this as a corpus limitation in the report.
+AMERICANSTORIES_YEARS = {
+    "1820-1860": ["1850", "1855", "1859"],
+    "1860-1900": ["1865", "1875", "1885", "1895"],
+    "1900-1940": ["1905", "1915", "1920", "1924"],
+    "1940-1980": ["1940", "1945", "1950", "1955", "1960", "1963"],
+}
+
+AMERICANSTORIES_TARGET_PER_PERIOD = 3000
+
+
+AMERICANSTORIES_REPO = "dell-research-harvard/AmericanStories"
+AMERICANSTORIES_RESOLVE_URL = (
+    f"https://huggingface.co/datasets/{AMERICANSTORIES_REPO}/resolve/main/"
+)
+
+
+def _stream_articles_from_year(
+    year: str,
+    n_articles: int,
+):
+    """
+    Stream `faro_{year}.tar.gz` over HTTPS and yield article texts on the fly.
+    Stops as soon as `n_articles` articles have been emitted, so we never
+    download the entire 4–6 GB tarball.
+
+    Each tar member is a JSON page; the JSON's `full articles` list contains
+    one or more article dicts whose `article` field is the OCR'd body.
+    """
+    import tarfile
+    import io
+
+    url = AMERICANSTORIES_RESOLVE_URL + f"faro_{year}.tar.gz"
+    headers = {"User-Agent": USER_AGENT}
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    resp = requests.get(url, headers=headers, stream=True, timeout=60)
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code} fetching {url}")
+
+    emitted = 0
+    raw = resp.raw
+    # Note: tarfile's "r|gz" handles gunzipping itself. requests stores the
+    # raw gzipped bytes — do NOT also enable Content-Encoding decoding.
+
+    # Use streaming tar mode (no seeking required).
+    with tarfile.open(fileobj=raw, mode="r|gz") as tf:
+        for member in tf:
+            if emitted >= n_articles:
+                break
+            if not member.isfile() or not member.name.endswith(".json"):
+                continue
+            f = tf.extractfile(member)
+            if f is None:
+                continue
+            try:
+                data = f.read()
+                page = json.loads(data.decode("utf-8", errors="replace"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            for art in page.get("full articles", []) or []:
+                if emitted >= n_articles:
+                    break
+                text = (art.get("article") or "").strip()
+                if text and len(text.split()) >= MIN_CHUNK_LENGTH:
+                    yield text
+                    emitted += 1
+
+    resp.close()
+
+
+def download_americanstories(
+    target_articles_per_period: int = AMERICANSTORIES_TARGET_PER_PERIOD,
+):
+    """
+    Download newspaper articles from `dell-research-harvard/AmericanStories` on
+    HuggingFace. Articles are saved one-per-file as
+    `data/raw/{period}/article_NNNNNN.txt`.
+
+    Each yearly tarball is large (4–6 GB), so we stream the gzip+tar over
+    HTTPS and short-circuit once we have enough articles per year.
+    """
+    print("=" * 60)
+    print("AMERICANSTORIES DOWNLOAD (HuggingFace, streaming)")
+    print("=" * 60)
+
+    for period, years in AMERICANSTORIES_YEARS.items():
+        period_dir = RAW_DIR / period
+        period_dir.mkdir(parents=True, exist_ok=True)
+
+        existing = len(list(period_dir.glob("article_*.txt")))
+        if existing >= target_articles_per_period:
+            print(f"  {period}: already have {existing} articles, skipping")
+            continue
+
+        print(f"\n  {period}: target {target_articles_per_period} articles "
+              f"(have {existing}, years={years})")
+
+        downloaded = existing
+        per_year_target = max(1, (target_articles_per_period - existing) // len(years) + 1)
+
+        for year in years:
+            if downloaded >= target_articles_per_period:
+                break
+            try:
+                stream = _stream_articles_from_year(year, per_year_target)
+            except Exception as e:
+                print(f"    {year}: stream failed ({type(e).__name__}: {e})")
+                continue
+
+            n_taken = 0
+            try:
+                for text in stream:
+                    if downloaded >= target_articles_per_period:
+                        break
+                    out_path = period_dir / f"article_{downloaded:06d}.txt"
+                    out_path.write_text(text, encoding="utf-8")
+                    downloaded += 1
+                    n_taken += 1
+            except Exception as e:
+                print(f"    {year}: stream interrupted after {n_taken} articles "
+                      f"({type(e).__name__}: {e})")
+            else:
+                print(f"    {year}: wrote {n_taken} articles "
+                      f"(period total: {downloaded})")
+
+        print(f"  {period}: completed with {downloaded} articles")
 
 
 # ---------------------------------------------------------------------------

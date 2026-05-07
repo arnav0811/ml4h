@@ -15,7 +15,7 @@ contribute syntactic context noise but no genuine semantic drift signal.
 
 import pandas as pd
 from collections import Counter
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 from config import (
     PERIODS, NEO_ABSENT_THRESHOLD, NEO_PRESENT_THRESHOLD,
@@ -94,9 +94,22 @@ def select_neologism_candidates(vc: Dict[str, Counter], metadata: Dict = None) -
     return df
 
 
-def select_drift_candidates(vc: Dict[str, Counter], metadata: Dict = None) -> pd.DataFrame:
-    """Content words present in 3+ periods with sufficient occurrences for stable embeddings."""
+def select_drift_candidates(
+    vc: Dict[str, Counter],
+    metadata: Dict = None,
+    promote_words: Optional[set] = None,
+    promote_min_freq: int = 5,
+) -> pd.DataFrame:
+    """
+    Content words present in 2+ periods with sufficient occurrences for stable embeddings.
+
+    `promote_words` is a curated set (e.g. literature drift words and lifecycle
+    candidates) that will be included even if they don't clear
+    `DRIFT_MIN_FREQ_PER_PERIOD`, as long as they appear in 2+ periods at
+    `promote_min_freq` raw count or above.
+    """
     metadata = metadata or {}
+    promote_words = promote_words or set()
     all_words = set()
     for c in vc.values():
         all_words.update(c.keys())
@@ -107,19 +120,29 @@ def select_drift_candidates(vc: Dict[str, Counter], metadata: Dict = None) -> pd
             continue
 
         raw = {p: vc[p].get(word, 0) for p in PERIODS}
-        n_present = sum(1 for f in raw.values() if f >= DRIFT_MIN_FREQ_PER_PERIOD)
-        if n_present >= DRIFT_MIN_PERIODS:
+        n_strong = sum(1 for f in raw.values() if f >= DRIFT_MIN_FREQ_PER_PERIOD)
+        passes = n_strong >= DRIFT_MIN_PERIODS
+        if not passes and word in promote_words:
+            n_promo = sum(1 for f in raw.values() if f >= promote_min_freq)
+            passes = n_promo >= 2
+        if passes:
+            n_present = sum(1 for f in raw.values() if f >= DRIFT_MIN_FREQ_PER_PERIOD)
             rows.append({
                 "word": word,
                 "n_periods": n_present,
                 "min_freq": min(raw.values()),
                 "max_freq": max(raw.values()),
                 "freq_profile": [raw[p] for p in PERIODS],
+                "is_promoted": word in promote_words and n_strong < DRIFT_MIN_PERIODS,
             })
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df = df.sort_values("min_freq", ascending=False).reset_index(drop=True)
+        # Promoted words get bumped to the top so BERT analysis covers them
+        # even when max_drift_words truncates the list.
+        df = df.sort_values(
+            ["is_promoted", "min_freq"], ascending=[False, False]
+        ).reset_index(drop=True)
     return df
 
 
@@ -154,7 +177,18 @@ def run_word_selection(vc: Dict[str, Counter]) -> Tuple[pd.DataFrame, pd.DataFra
               f"proper-noun cap ratio < {PROPER_NOUN_CAP_RATIO:.2f}")
 
     neo_df = select_neologism_candidates(vc, metadata)
-    drift_df = select_drift_candidates(vc, metadata)
+
+    # Promote literature-attested drift words and known neologisms into the
+    # drift candidate pool — this guarantees evaluation overlap (cell,
+    # broadcast, mouse, engine, water, etc.) even when their raw counts fall
+    # below the strong-drift threshold. Detected neologisms are NOT promoted
+    # automatically: with hundreds of detections, doing so floods the BERT
+    # analysis budget with neologisms and crowds out the stable controls
+    # that ground the Spearman ρ comparison.
+    from eval import KNOWN_DRIFT, KNOWN_NEOLOGISMS
+    promote = set(KNOWN_DRIFT) | set(KNOWN_NEOLOGISMS)
+
+    drift_df = select_drift_candidates(vc, metadata, promote_words=promote)
     lifecycle_df = select_lifecycle_words(neo_df, drift_df)
 
     print(f"  Neologism candidates: {len(neo_df)}")
