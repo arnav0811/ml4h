@@ -1,0 +1,24 @@
+{
+  "neologism": {
+    "label": "Our Method",
+    "recall": NaN,
+    "precision": NaN,
+    "f1": NaN,
+    "period_accuracy": NaN,
+    "n_gt": 0,
+    "n_detected": 66
+  },
+  "neologism_baseline": {},
+  "neologism_baseline_sw": {},
+  "drift_centroid": {
+    "spearman_rho": NaN,
+    "n_overlap": 0
+  },
+  "drift_apd": {
+    "spearman_rho": NaN,
+    "n_overlap": 0
+  },
+  "drift_random_baseline": {
+    "mean_rho": NaN
+  }
+}
